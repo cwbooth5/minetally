@@ -253,10 +253,9 @@ func fetchWorkerShares(worker Worker) (SharesResponse, error) {
 func debug_printShares() {
 	for worker, shares := range Workers {
 		fmt.Printf("Worker: %s\n", worker.ID)
-		debugJson, err := json.Marshal(shares)
-		if err != nil {
-			panic(err)
+
+		for date, share := range shares {
+			fmt.Printf("date: %d shares: %d\n", date, share)
 		}
-		fmt.Println(debugJson)
 	}
 }
