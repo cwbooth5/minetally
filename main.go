@@ -73,96 +73,9 @@ func RenderConfig(file string) (Config, error) {
 	return parsed, err
 }
 
-/*
-{
-    "status": true,
-    "data": [
-        {
-            "date": 1620271800,
-            "shares": 8,
-            "hashrate": 26302
-        },
-        {
-            "date": 1620271200,
-            "shares": 2,
-            "hashrate": 26370
-        },
-...
-*/
-
-type ChartDataPoint struct {
-	Date     int `json:"date"`
-	Shares   int `json:"shares"`
-	Hashrate int `json:"hashrate"`
-}
-
-type ChartResponse struct {
-	Status bool             `json:"status"`
-	Data   []ChartDataPoint `json:"data"`
-}
-
-// Get Chart Data on a wallet for a specific worker
-// https://api.nanopool.org/v1/eth/hashratechart/:address/:worker
-func GetChartData(worker string) {
-
-}
-
-/*
-{
-    "status": true,
-    "data": [
-        {
-            "uid": 16818403,
-            "id": "DESKTOP-AH56HCB",
-            "hashrate": 0,
-            "lastShare": 1620277013,
-            "rating": 20062
-        },
-        {
-            "uid": 20029185,
-            "id": "LAPTOP-707IIDV9",
-            "hashrate": 0,
-            "lastShare": 1620277218,
-            "rating": 9236
-        }
-    ]
-}
-
-
-
-*/
-
-type Worker struct {
-	UID       int    `json:"uid"`
-	ID        string `json:"id"`
-	Hashrate  int    `json:"hashrate"`
-	LastShare int    `json:"lastShare"` // unix timestamp
-	Rating    int    `json:"rating"`
-}
-
-type WorkerResponse struct {
-	Status bool     `json:"status"`
-	Data   []Worker `json:"data"`
-}
-
-type SharesResponse struct {
-	Status bool     `json:"status"`
-	Data   []Shares `json:"data"`
-}
-
-type Shares struct {
-	Date     int `json:"date"`
-	HashRate int `json:"shares"`
-}
-
 const PollInterval = 10 * time.Second
 
 func main() {
-	// logFile := "tally.log"
-	// file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 	ConfigureLogging(true, os.Stdout)
 
 	LogInfo.Println("hallo")
