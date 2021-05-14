@@ -6,7 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net/http"
+	"minetally/api"
 	"os"
 	"time"
 )
@@ -24,7 +24,7 @@ import (
 */
 
 var WalletAddress string // This will be the address everyone's mining for
-var Workers = make(map[Worker]map[int]int)
+var Workers = make(map[api.Worker]map[int]int)
 
 // Workers is in the format of
 //[Worker1]
@@ -97,7 +97,7 @@ func main() {
 }
 
 func pollForWorkers() {
-	response, e := fetchWorkers()
+	response, e := api.FetchWorkers(WalletAddress)
 	if e != nil {
 		LogError.Println("Failed to poll nanopool")
 	} else {
@@ -114,25 +114,9 @@ func pollForWorkers() {
 	}
 }
 
-func fetchWorkers() (WorkerResponse, error) {
-	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/workers/%s", WalletAddress))
-	if err != nil {
-		panic(err.Error())
-	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	var encoded = new(WorkerResponse)
-	err = json.Unmarshal(body, &encoded)
-
-	return *encoded, err
-}
-
 func pollForShares() {
 	for worker, shares := range Workers {
-		response, e := fetchWorkerShares(worker)
+		response, e := api.FetchWorkerShares(WalletAddress, worker)
 		if e != nil {
 			LogError.Printf("Failed to poll shares for worker %s", worker.ID)
 		} else {
@@ -144,23 +128,6 @@ func pollForShares() {
 			fmt.Printf("Updated shares for workers.\n")
 		}
 	}
-}
-
-func fetchWorkerShares(worker Worker) (SharesResponse, error) {
-	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/shareratehistory/%s/%s", WalletAddress, worker.ID))
-	if err != nil {
-		panic(err.Error())
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	var encoded = new(SharesResponse)
-	err = json.Unmarshal(body, &encoded)
-
-	return *encoded, err
 }
 
 func debug_printShares() {
