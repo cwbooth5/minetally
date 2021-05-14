@@ -1,3 +1,18 @@
 {
-    "wallet_address": "0x07d4dc759f1219e921a396c1ea111eb51ea8bd07"
+    "wallet_address": "0x07d4dc759f1219e921a396c1ea111eb51ea8bd07",
+    "users": [
+        {
+            "name": "Bill",
+            "workers": [
+                "LAPTOP-707IIDV9",
+                "DESKTOP-RUF6CL1"
+            ]
+        },
+        {
+            "name": "Adam",
+            "workers": [
+                "DESKTOP-RUF6CL1"
+            ]
+        }
+    ]
 }

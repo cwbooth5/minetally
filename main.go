@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,6 +26,7 @@ import (
 
 var WalletAddress string // This will be the address everyone's mining for
 var Workers = make(map[api.Worker]map[int]int)
+var Users []User
 
 // Workers is in the format of
 //[Worker1]
@@ -37,6 +39,11 @@ var Workers = make(map[api.Worker]map[int]int)
 // Config holds the wallet address so we don't have to check it in here
 type Config struct {
 	WalletAddress string `json:"wallet_address"`
+}
+
+type User struct {
+	Name        string   `json:"name"`
+	WorkerNames []string `json:"workers"`
 }
 
 var (
@@ -76,6 +83,10 @@ func RenderConfig(file string) (Config, error) {
 const PollInterval = 10 * time.Second
 
 func main() {
+	// DEBUG
+	bill := User{"Bill", []string{"LAPTOP-707IIDV9", "DESKTOP-RUF6CL1"}}
+	Users = append(Users, bill)
+
 	ConfigureLogging(true, os.Stdout)
 
 	tallyConfig, e := RenderConfig("tally.json")
@@ -86,7 +97,7 @@ func main() {
 	LogInfo.Printf("Wallet address being monitored: %s\n", WalletAddress)
 
 	// Poll for ever
-	for true {
+	for {
 		pollForWorkers()
 		pollForShares()
 
@@ -119,7 +130,7 @@ func pollForShares() {
 		if e != nil {
 			LogError.Printf("Failed to poll shares for worker %s", worker.ID)
 		} else {
-			// we can track workers by their ID here
+			// Record unique shares
 			for _, workerShares := range response.Data {
 				shares[workerShares.Date] = workerShares.HashRate
 			}
@@ -129,12 +140,52 @@ func pollForShares() {
 	}
 }
 
+func userForWorker(worker api.Worker) (User, error) {
+	var foundUser User
+	var found bool
+
+	for _, user := range Users {
+		for _, usersWorker := range user.WorkerNames {
+			if usersWorker == worker.ID {
+				foundUser = user
+				found = true
+				break
+			}
+		}
+	}
+
+	if found {
+		return foundUser, nil
+	} else {
+		return foundUser, errors.New("user not found for worker")
+	}
+}
+
 func debug_printShares() {
+
+	sharesByUser := make(map[string]int)
+	var totalShares int
+
 	for worker, shares := range Workers {
 		fmt.Printf("Worker: %s\n", worker.ID)
 
-		for date, share := range shares {
-			fmt.Printf("date: %d shares: %d\n", date, share)
+		owner, err := userForWorker(worker)
+		//if err != nil {
+		//	continue
+		//}
+
+		for _, share := range shares {
+			if err != nil {
+				sharesByUser[owner.Name] += share
+			}
+
+			totalShares += share
 		}
+	}
+
+	fmt.Printf("Total Shares: %d\n", totalShares)
+	for user, shares := range sharesByUser {
+		percent := (float64(shares) / float64(totalShares)) * 100.0
+		fmt.Printf("User: %s Has shares: %d Percent: %f\n", user, shares, percent)
 	}
 }
