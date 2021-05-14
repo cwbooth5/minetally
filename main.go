@@ -78,7 +78,6 @@ const PollInterval = 10 * time.Second
 func main() {
 	ConfigureLogging(true, os.Stdout)
 
-	LogInfo.Println("hallo")
 	tallyConfig, e := RenderConfig("tally.json")
 	if e != nil {
 		LogError.Fatal("error loading local configuration file")
