@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 /*
@@ -23,7 +24,15 @@ import (
 */
 
 var WalletAddress string // This will be the address everyone's mining for
-var Workers []string     // current array of worker machine names
+var Workers = make(map[Worker]map[int]int)
+
+// Workers is in the format of
+//[Worker1]
+//	[date] [numshare]
+//	[date] [numshare]
+//	[date] [numshare]
+//[Worker2]
+//	[date] [numshare]
 
 // Config holds the wallet address so we don't have to check it in here
 type Config struct {
@@ -136,6 +145,18 @@ type WorkerResponse struct {
 	Data   []Worker `json:"data"`
 }
 
+type SharesResponse struct {
+	Status bool     `json:"status"`
+	Data   []Shares `json:"data"`
+}
+
+type Shares struct {
+	Date     int `json:"date"`
+	HashRate int `json:"shares"`
+}
+
+const PollInterval = 10 * time.Second
+
 func main() {
 	// logFile := "tally.log"
 	// file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
@@ -152,6 +173,35 @@ func main() {
 	WalletAddress = tallyConfig.WalletAddress
 	LogInfo.Printf("Wallet address being monitored: %s\n", WalletAddress)
 
+	// Poll for ever
+	for true {
+		pollForWorkers()
+		pollForShares()
+
+		debug_printShares()
+		time.Sleep(PollInterval)
+	}
+}
+
+func pollForWorkers() {
+	response, e := fetchWorkers()
+	if e != nil {
+		LogError.Println("Failed to poll nanopool")
+	} else {
+		// we can track workers by their ID here
+		numWorkers := len(response.Data)
+		fmt.Printf("Found %d workers\n", numWorkers)
+
+		for _, worker := range response.Data {
+			if Workers[worker] == nil {
+				Workers[worker] = make(map[int]int)
+				fmt.Printf("Found new worker! %s\n", worker.ID)
+			}
+		}
+	}
+}
+
+func fetchWorkers() (WorkerResponse, error) {
 	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/workers/%s", WalletAddress))
 	if err != nil {
 		panic(err.Error())
@@ -163,16 +213,50 @@ func main() {
 
 	var encoded = new(WorkerResponse)
 	err = json.Unmarshal(body, &encoded)
+
+	return *encoded, err
+}
+
+func pollForShares() {
+	for worker, shares := range Workers {
+		response, e := fetchWorkerShares(worker)
+		if e != nil {
+			LogError.Printf("Failed to poll shares for worker %s", worker.ID)
+		} else {
+			// we can track workers by their ID here
+			for _, workerShares := range response.Data {
+				shares[workerShares.Date] = workerShares.HashRate
+			}
+
+			fmt.Printf("Updated shares for workers.\n")
+		}
+	}
+}
+
+func fetchWorkerShares(worker Worker) (SharesResponse, error) {
+	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/shareratehistory/%s/%s", WalletAddress, worker.ID))
 	if err != nil {
 		panic(err.Error())
 	}
 
-	// dump out the worker data in a line, just to verify this api call and the json marshal code
-	fmt.Println(encoded)
-
-	// we can track workers by their ID here
-	for _, w := range encoded.Data {
-		Workers = append(Workers, w.ID)
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		panic(err.Error())
 	}
-	// more to come here....
+
+	var encoded = new(SharesResponse)
+	err = json.Unmarshal(body, &encoded)
+
+	return *encoded, err
+}
+
+func debug_printShares() {
+	for worker, shares := range Workers {
+		fmt.Printf("Worker: %s\n", worker.ID)
+		debugJson, err := json.Marshal(shares)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(debugJson)
+	}
 }
