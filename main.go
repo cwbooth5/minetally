@@ -39,6 +39,7 @@ var Users []User
 // Config holds the wallet address so we don't have to check it in here
 type Config struct {
 	WalletAddress string `json:"wallet_address"`
+	Users         []User `json:"users"`
 }
 
 type User struct {
@@ -83,10 +84,6 @@ func RenderConfig(file string) (Config, error) {
 const PollInterval = 10 * time.Second
 
 func main() {
-	// DEBUG
-	bill := User{"Bill", []string{"LAPTOP-707IIDV9", "DESKTOP-RUF6CL1"}}
-	Users = append(Users, bill)
-
 	ConfigureLogging(true, os.Stdout)
 
 	tallyConfig, e := RenderConfig("tally.json")
@@ -95,6 +92,10 @@ func main() {
 	}
 	WalletAddress = tallyConfig.WalletAddress
 	LogInfo.Printf("Wallet address being monitored: %s\n", WalletAddress)
+
+	Users = tallyConfig.Users
+	fmt.Println("USERS:")
+	fmt.Println(Users)
 
 	// Poll for ever
 	for {
