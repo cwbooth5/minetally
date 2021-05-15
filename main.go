@@ -84,10 +84,19 @@ func RenderConfig(file string) (Config, error) {
 const PollInterval = 10 * time.Second
 
 func main() {
+	var err error
 	ConfigureLogging(true, os.Stdout)
 
-	tallyConfig, e := RenderConfig("tally.json")
-	if e != nil {
+	// config file should be stored at:
+	// ~/.minetally/tally.json
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		LogError.Fatal("ensure ~/.minetally/tally.json config file exists")
+	}
+
+	tallyConfig, err := RenderConfig(fmt.Sprintf("%s/.minetally/tally.json", home))
+	if err != nil {
 		LogError.Fatal("error loading local configuration file")
 	}
 	WalletAddress = tallyConfig.WalletAddress
