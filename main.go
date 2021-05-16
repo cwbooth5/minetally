@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -89,7 +88,6 @@ func main() {
 
 	// config file should be stored at:
 	// ~/.minetally/tally.json
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		LogError.Fatal("ensure ~/.minetally/tally.json config file exists")
@@ -100,13 +98,16 @@ func main() {
 		LogError.Fatal("error loading local configuration file")
 	}
 	WalletAddress = tallyConfig.WalletAddress
-	LogInfo.Printf("Wallet address being monitored: %s\n", WalletAddress)
 
 	Users = tallyConfig.Users
-	fmt.Println("USERS:")
-	fmt.Println(Users)
+	LogInfo.Printf("Minetally starting...\nmonitoring address %s\n", WalletAddress)
+	LogInfo.Printf("Users: %s\n", Users)
+	LogInfo.Printf("Poll Interval: %d\n", PollInterval)
 
-	// Poll for ever
+	f, _ := api.FetchBalance(WalletAddress)
+	LogInfo.Printf("Wallet Balance: %f\n", f.Balance)
+
+	// Poll forever
 	for {
 		pollForWorkers()
 		pollForShares()
@@ -166,9 +167,9 @@ func userForWorker(worker api.Worker) (User, error) {
 
 	if found {
 		return foundUser, nil
-	} else {
-		return foundUser, errors.New("user not found for worker")
 	}
+	return foundUser, fmt.Errorf("user not found for worker '%s'", worker.ID)
+
 }
 
 func debug_printShares() {
@@ -180,12 +181,14 @@ func debug_printShares() {
 		fmt.Printf("Worker: %s\n", worker.ID)
 
 		owner, err := userForWorker(worker)
-		//if err != nil {
-		//	continue
-		//}
+		if err != nil {
+			LogError.Println(err)
+			continue
+		}
 
 		for _, share := range shares {
 			if err != nil {
+				LogDebug.Println("adding shares to user...")
 				sharesByUser[owner.Name] += share
 			}
 

@@ -40,6 +40,11 @@ type SharesResponse struct {
 	Data   []Shares `json:"data"`
 }
 
+type BalanceResponse struct {
+	Status  bool    `json:"status"`
+	Balance float64 `json:"data"`
+}
+
 type Shares struct {
 	Date     int `json:"date"`
 	HashRate int `json:"shares"`
