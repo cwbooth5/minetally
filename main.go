@@ -6,8 +6,9 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net/http"
+	"minetally/api"
 	"os"
+	"time"
 )
 
 /*
@@ -23,11 +24,26 @@ import (
 */
 
 var WalletAddress string // This will be the address everyone's mining for
-var Workers []string     // current array of worker machine names
+var Workers = make(map[api.Worker]map[int]int)
+var Users []User
+
+// Workers is in the format of
+//[Worker1]
+//	[date] [numshare]
+//	[date] [numshare]
+//	[date] [numshare]
+//[Worker2]
+//	[date] [numshare]
 
 // Config holds the wallet address so we don't have to check it in here
 type Config struct {
 	WalletAddress string `json:"wallet_address"`
+	Users         []User `json:"users"`
+}
+
+type User struct {
+	Name        string   `json:"name"`
+	WorkerNames []string `json:"workers"`
 }
 
 var (
@@ -64,115 +80,125 @@ func RenderConfig(file string) (Config, error) {
 	return parsed, err
 }
 
-/*
-{
-    "status": true,
-    "data": [
-        {
-            "date": 1620271800,
-            "shares": 8,
-            "hashrate": 26302
-        },
-        {
-            "date": 1620271200,
-            "shares": 2,
-            "hashrate": 26370
-        },
-...
-*/
-
-type ChartDataPoint struct {
-	Date     int `json:"date"`
-	Shares   int `json:"shares"`
-	Hashrate int `json:"hashrate"`
-}
-
-type ChartResponse struct {
-	Status bool             `json:"status"`
-	Data   []ChartDataPoint `json:"data"`
-}
-
-// Get Chart Data on a wallet for a specific worker
-// https://api.nanopool.org/v1/eth/hashratechart/:address/:worker
-func GetChartData(worker string) {
-
-}
-
-/*
-{
-    "status": true,
-    "data": [
-        {
-            "uid": 16818403,
-            "id": "DESKTOP-AH56HCB",
-            "hashrate": 0,
-            "lastShare": 1620277013,
-            "rating": 20062
-        },
-        {
-            "uid": 20029185,
-            "id": "LAPTOP-707IIDV9",
-            "hashrate": 0,
-            "lastShare": 1620277218,
-            "rating": 9236
-        }
-    ]
-}
-
-
-
-*/
-
-type Worker struct {
-	UID       int    `json:"uid"`
-	ID        string `json:"id"`
-	Hashrate  int    `json:"hashrate"`
-	LastShare int    `json:"lastShare"` // unix timestamp
-	Rating    int    `json:"rating"`
-}
-
-type WorkerResponse struct {
-	Status bool     `json:"status"`
-	Data   []Worker `json:"data"`
-}
+const PollInterval = 10 * time.Second
 
 func main() {
-	// logFile := "tally.log"
-	// file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	var err error
 	ConfigureLogging(true, os.Stdout)
 
-	LogInfo.Println("hallo")
-	tallyConfig, e := RenderConfig("tally.json")
-	if e != nil {
+	// config file should be stored at:
+	// ~/.minetally/tally.json
+	home, err := os.UserHomeDir()
+	if err != nil {
+		LogError.Fatal("ensure ~/.minetally/tally.json config file exists")
+	}
+
+	tallyConfig, err := RenderConfig(fmt.Sprintf("%s/.minetally/tally.json", home))
+	if err != nil {
 		LogError.Fatal("error loading local configuration file")
 	}
 	WalletAddress = tallyConfig.WalletAddress
-	LogInfo.Printf("Wallet address being monitored: %s\n", WalletAddress)
 
-	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/workers/%s", WalletAddress))
-	if err != nil {
-		panic(err.Error())
+	Users = tallyConfig.Users
+	LogInfo.Printf("Minetally starting...\nmonitoring address %s\n", WalletAddress)
+	LogInfo.Printf("Users: %s\n", Users)
+	LogInfo.Printf("Poll Interval: %d\n", PollInterval)
+
+	f, _ := api.FetchBalance(WalletAddress)
+	LogInfo.Printf("Wallet Balance: %f\n", f.Balance)
+
+	// Poll forever
+	for {
+		pollForWorkers()
+		pollForShares()
+
+		debug_printShares()
+		time.Sleep(PollInterval)
 	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		panic(err.Error())
+}
+
+func pollForWorkers() {
+	response, e := api.FetchWorkers(WalletAddress)
+	if e != nil {
+		LogError.Println("Failed to poll nanopool")
+	} else {
+		// we can track workers by their ID here
+		numWorkers := len(response.Data)
+		fmt.Printf("Found %d workers\n", numWorkers)
+
+		for _, worker := range response.Data {
+			if Workers[worker] == nil {
+				Workers[worker] = make(map[int]int)
+				fmt.Printf("Found new worker! %s\n", worker.ID)
+			}
+		}
+	}
+}
+
+func pollForShares() {
+	for worker, shares := range Workers {
+		response, e := api.FetchWorkerShares(WalletAddress, worker)
+		if e != nil {
+			LogError.Printf("Failed to poll shares for worker %s", worker.ID)
+		} else {
+			// Record unique shares
+			for _, workerShares := range response.Data {
+				shares[workerShares.Date] = workerShares.HashRate
+			}
+
+			fmt.Printf("Updated shares for workers.\n")
+		}
+	}
+}
+
+func userForWorker(worker api.Worker) (User, error) {
+	var foundUser User
+	var found bool
+
+	for _, user := range Users {
+		for _, usersWorker := range user.WorkerNames {
+			if usersWorker == worker.ID {
+				foundUser = user
+				found = true
+				break
+			}
+		}
 	}
 
-	var encoded = new(WorkerResponse)
-	err = json.Unmarshal(body, &encoded)
-	if err != nil {
-		panic(err.Error())
+	if found {
+		return foundUser, nil
+	}
+	return foundUser, fmt.Errorf("user not found for worker '%s'", worker.ID)
+
+}
+
+func debug_printShares() {
+
+	sharesByUser := make(map[string]int)
+	var totalShares int
+
+	for worker, shares := range Workers {
+		fmt.Printf("Worker: %s\n", worker.ID)
+
+		owner, err := userForWorker(worker)
+		if err != nil {
+			LogError.Println(err)
+			continue
+		}
+
+		for _, share := range shares {
+			if err != nil {
+				LogDebug.Println("adding shares to user...")
+				sharesByUser[owner.Name] += share
+			}
+
+			totalShares += share
+		}
 	}
 
-	// dump out the worker data in a line, just to verify this api call and the json marshal code
-	fmt.Println(encoded)
-
-	// we can track workers by their ID here
-	for _, w := range encoded.Data {
-		Workers = append(Workers, w.ID)
+	fmt.Printf("Total Shares: %d\n", totalShares)
+	for user, shares := range sharesByUser {
+		percent := (float64(shares) / float64(totalShares)) * 100.0
+		fmt.Printf("User: %s Has shares: %d Percent: %f\n", user, shares, percent)
 	}
-	// more to come here....
 }
