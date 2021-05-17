@@ -27,6 +27,11 @@ var WalletAddress string // This will be the address everyone's mining for
 var Workers = make(map[api.Worker]map[int]int)
 var Users []User
 
+type WorkerData struct {
+	Workers []api.Worker        `json:"workers"`
+	Shares  map[int]map[int]int `json:"shares"`
+}
+
 // Workers is in the format of
 //[Worker1]
 //	[date] [numshare]
@@ -82,20 +87,37 @@ func RenderConfig(file string) (Config, error) {
 
 const PollInterval = 10 * time.Second
 
+func getHomeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		LogError.Fatal("failed to get home directory")
+	}
+
+	return home
+}
+
+func getConfigDir() string {
+	home := getHomeDir()
+	return fmt.Sprintf("%s/.minetally/", home)
+}
+
+const configFileName = "tally.json"
+const jsonDataFileName = "data.json"
+
 func main() {
 	var err error
 	ConfigureLogging(true, os.Stdout)
 
 	// config file should be stored at:
 	// ~/.minetally/tally.json
-	home, err := os.UserHomeDir()
-	if err != nil {
-		LogError.Fatal("ensure ~/.minetally/tally.json config file exists")
-	}
+	configFileDir := getConfigDir()
+	configFilePath := configFileDir + configFileName
 
-	tallyConfig, err := RenderConfig(fmt.Sprintf("%s/.minetally/tally.json", home))
+	tallyConfig, err := RenderConfig(configFilePath)
 	if err != nil {
-		LogError.Fatal("error loading local configuration file")
+		LogError.Println("No config file. Writing default")
+
+		tallyConfig = createConfig(configFileDir, configFileName)
 	}
 	WalletAddress = tallyConfig.WalletAddress
 
@@ -112,9 +134,46 @@ func main() {
 		pollForWorkers()
 		pollForShares()
 
+		saveData()
+
 		debug_printShares()
 		time.Sleep(PollInterval)
 	}
+}
+
+func makeHomeDir(configFileDir string) {
+	// Make config dir if it doesn't exist
+	if _, err := os.Stat(configFileDir); os.IsNotExist(err) {
+		err = os.Mkdir(configFileDir, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func createConfig(configFileDir string, configFileName string) Config {
+
+	fmt.Println("Enter Wallet Address: (0x000000000000000000000000000)")
+	var walletAddress string
+	fmt.Scanln(&walletAddress)
+
+	newConfig := Config{
+		WalletAddress: walletAddress,
+		Users:         []User{},
+	}
+
+	configJson, err := json.Marshal(newConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	makeHomeDir(configFileDir)
+
+	configFilePath := configFileDir + configFileName
+
+	writeStringToFile(configJson, configFilePath)
+
+	return newConfig
 }
 
 func pollForWorkers() {
@@ -170,6 +229,53 @@ func userForWorker(worker api.Worker) (User, error) {
 	}
 	return foundUser, fmt.Errorf("user not found for worker '%s'", worker.ID)
 
+}
+
+func saveData() {
+	workerData := WorkerData{
+		Workers: []api.Worker{},
+		Shares:  make(map[int]map[int]int),
+	}
+
+	for worker, shares := range Workers {
+		workerData.Workers = append(workerData.Workers, worker)
+
+		LogDebug.Println("Worker: " + worker.ID)
+
+		for date, share := range shares {
+			if workerData.Shares[worker.UID] == nil {
+				workerData.Shares[worker.UID] = make(map[int]int)
+			}
+
+			workerData.Shares[worker.UID][date] = share
+		}
+	}
+
+	LogDebug.Printf("Workers: %d", len(workerData.Workers))
+
+	workerJsonData, err := json.Marshal(workerData)
+	if err != nil {
+		panic(err)
+	}
+
+	LogDebug.Printf(string(workerJsonData))
+
+	configDir := getConfigDir()
+	dataFile := configDir + jsonDataFileName
+
+	writeStringToFile(workerJsonData, dataFile)
+}
+
+func writeStringToFile(data []byte, filePath string) {
+	fh, err := os.Create(filePath)
+	if err != nil {
+		LogError.Fatal(err)
+	}
+
+	_, err = fh.Write(data)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func debug_printShares() {
