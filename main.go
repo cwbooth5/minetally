@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -121,6 +122,9 @@ func main() {
 	}
 	WalletAddress = tallyConfig.WalletAddress
 
+	// Read the existing data file into memory
+	readData()
+
 	Users = tallyConfig.Users
 	LogInfo.Printf("Minetally starting...\nmonitoring address %s\n", WalletAddress)
 	LogInfo.Printf("Users: %s\n", Users)
@@ -136,7 +140,7 @@ func main() {
 
 		saveData()
 
-		debug_printShares()
+		//debug_printShares()
 		time.Sleep(PollInterval)
 	}
 }
@@ -240,8 +244,6 @@ func saveData() {
 	for worker, shares := range Workers {
 		workerData.Workers = append(workerData.Workers, worker)
 
-		LogDebug.Println("Worker: " + worker.ID)
-
 		for date, share := range shares {
 			if workerData.Shares[worker.UID] == nil {
 				workerData.Shares[worker.UID] = make(map[int]int)
@@ -251,19 +253,17 @@ func saveData() {
 		}
 	}
 
-	LogDebug.Printf("Workers: %d", len(workerData.Workers))
-
 	workerJsonData, err := json.Marshal(workerData)
 	if err != nil {
 		panic(err)
 	}
 
-	LogDebug.Printf(string(workerJsonData))
-
 	configDir := getConfigDir()
 	dataFile := configDir + jsonDataFileName
 
 	writeStringToFile(workerJsonData, dataFile)
+
+	LogInfo.Println("Data saved to " + dataFile)
 }
 
 func writeStringToFile(data []byte, filePath string) {
@@ -276,6 +276,57 @@ func writeStringToFile(data []byte, filePath string) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func readData() {
+	configDir := getConfigDir()
+	dataFile := configDir + jsonDataFileName
+
+	if _, err := os.Stat(dataFile); os.IsExist(err) {
+		LogInfo.Println("Data file exists, reading it into memory")
+
+		// Read data from the file
+		data, err := ioutil.ReadFile(dataFile)
+		if err != nil {
+			LogError.Fatal(err)
+		}
+
+		var workerData WorkerData
+
+		// Unmarshall it
+		err = json.Unmarshal(data, &workerData)
+		if err != nil {
+			LogError.Fatal(err)
+		}
+
+		// Fill our in-memory data structure with it
+		for _, worker := range workerData.Workers {
+			Workers[worker] = make(map[int]int)
+		}
+
+		// Fill the shares for each worker from the stored data
+		for workerUid, shares := range workerData.Shares {
+			worker, err := findWorkerForUid(workerUid)
+			if err != nil {
+				panic(err)
+			}
+
+			Workers[worker] = make(map[int]int)
+			for date, share := range shares {
+				Workers[worker][date] = share
+			}
+		}
+	}
+}
+
+func findWorkerForUid(uid int) (api.Worker, error) {
+	for worker, _ := range Workers {
+		if worker.UID == uid {
+			return worker, nil
+		}
+	}
+
+	return api.Worker{}, errors.New(fmt.Sprintf("Failed to find worker for %d", uid))
 }
 
 func debug_printShares() {
