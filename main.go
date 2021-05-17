@@ -124,12 +124,12 @@ func pollForWorkers() {
 	} else {
 		// we can track workers by their ID here
 		numWorkers := len(response.Data)
-		fmt.Printf("Found %d workers\n", numWorkers)
+		LogInfo.Printf("Found %d workers\n", numWorkers)
 
 		for _, worker := range response.Data {
 			if Workers[worker] == nil {
 				Workers[worker] = make(map[int]int)
-				fmt.Printf("Found new worker! %s\n", worker.ID)
+				LogInfo.Printf("Found new worker! %s\n", worker.ID)
 			}
 		}
 	}
@@ -146,7 +146,7 @@ func pollForShares() {
 				shares[workerShares.Date] = workerShares.HashRate
 			}
 
-			fmt.Printf("Updated shares for workers.\n")
+			LogInfo.Printf("Updated shares for workers.\n")
 		}
 	}
 }
@@ -178,7 +178,7 @@ func debug_printShares() {
 	var totalShares int
 
 	for worker, shares := range Workers {
-		fmt.Printf("Worker: %s\n", worker.ID)
+		LogInfo.Printf("Worker: %s\n", worker.ID)
 
 		owner, err := userForWorker(worker)
 		if err != nil {
@@ -196,9 +196,9 @@ func debug_printShares() {
 		}
 	}
 
-	fmt.Printf("Total Shares: %d\n", totalShares)
+	LogInfo.Printf("Total Shares: %d\n", totalShares)
 	for user, shares := range sharesByUser {
 		percent := (float64(shares) / float64(totalShares)) * 100.0
-		fmt.Printf("User: %s Has shares: %d Percent: %f\n", user, shares, percent)
+		LogInfo.Printf("User: %s Has shares: %d Percent: %f\n", user, shares, percent)
 	}
 }
