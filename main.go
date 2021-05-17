@@ -159,7 +159,10 @@ func createConfig(configFileDir string, configFileName string) Config {
 
 	fmt.Println("Enter Wallet Address: (0x000000000000000000000000000)")
 	var walletAddress string
-	fmt.Scanln(&walletAddress)
+	_, err := fmt.Scanln(&walletAddress)
+	if err != nil {
+		panic(err)
+	}
 
 	newConfig := Config{
 		WalletAddress: walletAddress,
