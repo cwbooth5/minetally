@@ -69,7 +69,7 @@ func ConfigureLogging(debug bool, w io.Writer) {
 	}
 }
 
-const PollInterval = 10 * time.Second
+const PollInterval = 1 * time.Hour
 
 func main() {
 	var err error
