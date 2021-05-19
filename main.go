@@ -3,12 +3,15 @@ package main
 import (
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
 	"minetally/api"
 	"os"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 /*
@@ -71,6 +74,30 @@ func ConfigureLogging(debug bool, w io.Writer) {
 
 const PollInterval = 1 * time.Hour
 
+func configureRouter() *gin.Engine {
+	var indexTmpl = template.Must(template.New("index").Parse(`
+<html>
+<head>
+  <title>Minetally</title>
+</head>
+<body>
+  DERP.
+</body>
+</html>
+`))
+	r := gin.Default()
+	r.SetHTMLTemplate(indexTmpl)
+
+	r.GET("/", func(c *gin.Context) {
+		c.HTML(200, "index", gin.H{
+			"status": "success",
+		})
+	})
+
+	return r
+
+}
+
 func main() {
 	var err error
 	ConfigureLogging(true, os.Stdout)
@@ -99,16 +126,22 @@ func main() {
 	f, _ := api.FetchBalance(WalletAddress)
 	LogInfo.Printf("Wallet Balance: %f\n", f.Balance)
 
-	// Poll forever
-	for {
-		pollForWorkers()
-		pollForShares()
+	go func() {
+		// Poll forever
+		for {
+			pollForWorkers()
+			pollForShares()
 
-		saveData()
+			saveData()
 
-		//debug_printShares()
-		time.Sleep(PollInterval)
-	}
+			//debug_printShares()
+			time.Sleep(PollInterval)
+		}
+	}()
+
+	r := configureRouter()
+	r.Run(":9000")
+
 }
 
 func pollForWorkers() {
