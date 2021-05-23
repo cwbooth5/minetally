@@ -9,6 +9,8 @@ import (
 	"os"
 )
 
+const DEFAULTPORT = 9501
+
 func RenderConfig(file string) (Config, error) {
 	var parsed Config
 	cfgFile, err := os.Open(file)
@@ -64,6 +66,7 @@ func createConfig(configFileDir string, configFileName string) Config {
 	newConfig := Config{
 		WalletAddress: walletAddress,
 		Users:         []User{},
+		ListenPort:    DEFAULTPORT,
 	}
 
 	configJson, err := json.Marshal(newConfig)

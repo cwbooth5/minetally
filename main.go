@@ -47,6 +47,7 @@ type WorkerData struct {
 type Config struct {
 	WalletAddress string `json:"wallet_address"`
 	Users         []User `json:"users"`
+	ListenPort    int    `json:"listen_port"`
 }
 
 type User struct {
@@ -85,6 +86,7 @@ func configureRouter() *gin.Engine {
 </body>
 </html>
 `))
+
 	r := gin.Default()
 	r.SetHTMLTemplate(indexTmpl)
 
@@ -140,8 +142,7 @@ func main() {
 	}()
 
 	r := configureRouter()
-	r.Run(":9000")
-
+	r.Run(fmt.Sprintf(":%d", tallyConfig.ListenPort))
 }
 
 func pollForWorkers() {
