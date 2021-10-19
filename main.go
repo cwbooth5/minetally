@@ -99,6 +99,8 @@ func main() {
 	f, _ := api.FetchBalance(WalletAddress)
 	LogInfo.Printf("Wallet Balance: %f\n", f.Balance)
 
+	printPayoutInfo()
+
 	// Poll forever
 	for {
 		pollForWorkers()
@@ -167,7 +169,7 @@ func userForWorker(worker api.Worker) (User, error) {
 }
 
 func findWorkerForUid(uid int) (api.Worker, error) {
-	for worker, _ := range Workers {
+	for worker := range Workers {
 		if worker.UID == uid {
 			return worker, nil
 		}
@@ -176,8 +178,24 @@ func findWorkerForUid(uid int) (api.Worker, error) {
 	return api.Worker{}, errors.New(fmt.Sprintf("Failed to find worker for %d", uid))
 }
 
-func debug_printShares() {
+func printPayoutInfo() {
+	p, e := api.FetchPayments(WalletAddress)
+	if e != nil {
+		LogError.Printf("Failed to make Payout request:\n%s", e.Error())
+	} else if p.Status == false {
+		LogError.Printf("Payout request Status: false")
+	} else {
+		for _, payment := range p.Data {
+			LogInfo.Printf("Payment!")
 
+			t := time.Unix(payment.Date, 0)
+			LogInfo.Printf("Date: %s", t.String())
+			LogInfo.Printf("Amount: %f", payment.Amount)
+		}
+	}
+}
+
+func debug_printShares() {
 	sharesByUser := make(map[string]int)
 	var totalShares int
 

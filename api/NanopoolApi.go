@@ -53,5 +53,20 @@ func FetchBalance(walletAddress string) (BalanceResponse, error) {
 
 	err = json.Unmarshal(body, &encoded)
 	return *encoded, err
+}
 
+func FetchPayments(walletAddress string) (PaymentsResponse, error) {
+	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/payments/%s", walletAddress))
+	var encoded = new(PaymentsResponse)
+	if err != nil {
+		return *encoded, err
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return *encoded, err
+	}
+
+	err = json.Unmarshal(body, &encoded)
+	return *encoded, err
 }

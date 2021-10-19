@@ -49,3 +49,15 @@ type Shares struct {
 	Date     int `json:"date"`
 	HashRate int `json:"shares"`
 }
+
+type Payment struct {
+	Date      int64   `json:"date"`
+	TxHash    string  `json:"txHash"`
+	Amount    float64 `json:"amount"`
+	Confirmed bool    `json:"confirmed"`
+}
+
+type PaymentsResponse struct {
+	Status bool      `json:"status"`
+	Data   []Payment `json:"data"`
+}
