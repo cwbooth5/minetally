@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 )
 
@@ -57,6 +59,9 @@ func FetchBalance(walletAddress string) (BalanceResponse, error) {
 
 func FetchPayments(walletAddress string) (PaymentsResponse, error) {
 	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/payments/%s", walletAddress))
+
+	//debugResponse(res)
+
 	var encoded = new(PaymentsResponse)
 	if err != nil {
 		return *encoded, err
@@ -69,4 +74,15 @@ func FetchPayments(walletAddress string) (PaymentsResponse, error) {
 
 	err = json.Unmarshal(body, &encoded)
 	return *encoded, err
+}
+
+func debugResponse(response *http.Response) {
+	defer response.Body.Close()
+
+	b, err := io.ReadAll(response.Body)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	fmt.Println(string(b))
 }

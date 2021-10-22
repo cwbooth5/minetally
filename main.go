@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -82,24 +83,34 @@ func main() {
 
 	tallyConfig, err := RenderConfig(configFilePath)
 	if err != nil {
+		LogError.Printf(err.Error())
 		LogError.Println("No config file. Writing default")
 
 		tallyConfig = createConfig(configFileDir, configFileName)
 	}
 	WalletAddress = tallyConfig.WalletAddress
+	Users = tallyConfig.Users
 
 	// Read the existing data file into memory
 	readData()
 
-	Users = tallyConfig.Users
+	var report bool
+
+	flag.BoolVar(&report, "report", false, "Generate a report from the collected data")
+	flag.Parse()
+
+	// Generate a report and exit
+	if report {
+		printPayoutInfo()
+		return
+	}
+
 	LogInfo.Printf("Minetally starting...\nmonitoring address %s\n", WalletAddress)
 	LogInfo.Printf("Users: %s\n", Users)
 	LogInfo.Printf("Poll Interval: %d\n", PollInterval)
 
 	f, _ := api.FetchBalance(WalletAddress)
 	LogInfo.Printf("Wallet Balance: %f\n", f.Balance)
-
-	printPayoutInfo()
 
 	// Poll forever
 	for {
@@ -109,6 +120,7 @@ func main() {
 		saveData()
 
 		//debug_printShares()
+		LogInfo.Printf("Sleep for: %d", PollInterval)
 		time.Sleep(PollInterval)
 	}
 }
@@ -178,21 +190,120 @@ func findWorkerForUid(uid int) (api.Worker, error) {
 	return api.Worker{}, errors.New(fmt.Sprintf("Failed to find worker for %d", uid))
 }
 
+type MiningTraunch struct {
+	StartTime int64 `json:"start"`
+	EndTime   int64 `json:"end"`
+}
+
 func printPayoutInfo() {
+	var traunchs []MiningTraunch
+	var lastTime = int64(0)
+
 	p, e := api.FetchPayments(WalletAddress)
 	if e != nil {
-		LogError.Printf("Failed to make Payout request:\n%s", e.Error())
+		fmt.Printf("Failed to make Payout request: %s", e.Error())
+		//LogError.Printf("Failed to make Payout request: %s", e.Error())
 	} else if p.Status == false {
 		LogError.Printf("Payout request Status: false")
 	} else {
+
+		reportHeader("REPORT")
+
+		reportSubheader("Payments")
+		// Create the payment traunch date ranges
 		for _, payment := range p.Data {
-			LogInfo.Printf("Payment!")
+
+			newTranch := MiningTraunch{
+				StartTime: lastTime,
+				EndTime:   payment.Date,
+			}
+			traunchs = append(traunchs, newTranch)
+
+			lastTime = payment.Date
+
+			LogInfo.Printf("Payment found:")
 
 			t := time.Unix(payment.Date, 0)
 			LogInfo.Printf("Date: %s", t.String())
 			LogInfo.Printf("Amount: %f", payment.Amount)
+
+			LogInfo.Printf("\n")
+		}
+
+		knownUserReport()
+		unknownWorkerReport()
+
+		numWorkers := len(Workers)
+		LogInfo.Printf("numWorkers: %d", numWorkers)
+
+		debug_printShares()
+	}
+}
+
+func knownUserReport() {
+	reportSubheader("Known Users")
+	for _, user := range Users {
+		LogInfo.Printf("User: %s", user.Name)
+		for _, worker := range user.WorkerNames {
+			LogInfo.Printf("		Worker: %s", worker)
 		}
 	}
+}
+
+func unknownWorkerReport() {
+	reportSubheader("Unknown Known Workers")
+	var unkownWorkers []api.Worker
+	for worker := range Workers {
+		if !isKnownWorker(worker) && !workerInList(worker.ID, unkownWorkers) {
+			unkownWorkers = append(unkownWorkers, worker)
+		}
+	}
+
+	if len(unkownWorkers) > 0 {
+		for _, unkownWorker := range unkownWorkers {
+			LogInfo.Printf(unkownWorker.ID)
+		}
+	} else {
+		LogInfo.Printf("none")
+	}
+}
+
+func workerInList(a string, list []api.Worker) bool {
+	for _, b := range list {
+		if b.ID == a {
+			return true
+		}
+	}
+	return false
+}
+
+func isKnownWorker(worker api.Worker) bool {
+	var isKnown = false
+	for _, user := range Users {
+		for _, knownWorkerId := range user.WorkerNames {
+			if worker.ID == knownWorkerId {
+				isKnown = true
+				break
+			}
+		}
+
+		if isKnown {
+			break
+		}
+	}
+	return isKnown
+}
+
+func reportHeader(title string) {
+	LogInfo.Printf("========================================")
+	LogInfo.Printf("| %s", title)
+	LogInfo.Printf("========================================")
+}
+
+func reportSubheader(title string) {
+	LogInfo.Printf("==========")
+	LogInfo.Printf("%s", title)
+	LogInfo.Printf("==========")
 }
 
 func debug_printShares() {

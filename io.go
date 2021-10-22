@@ -16,6 +16,8 @@ func RenderConfig(file string) (Config, error) {
 	if err != nil {
 		LogError.Printf("Error loading config: %s", file)
 		return parsed, err
+	} else {
+		LogInfo.Printf("Config loaded from: %s", file)
 	}
 	defer cfgFile.Close()
 
@@ -127,8 +129,9 @@ func readData() {
 	configDir := getConfigDir()
 	dataFile := configDir + jsonDataFileName
 
-	if _, err := os.Stat(dataFile); os.IsExist(err) {
-		LogInfo.Println("Data file exists, reading it into memory")
+	_, err := os.Stat(dataFile)
+	if err == nil {
+		LogInfo.Printf("Data file exists, reading it into memory")
 
 		// Read data from the file
 		data, err := ioutil.ReadFile(dataFile)
@@ -161,5 +164,7 @@ func readData() {
 				Workers[worker][date] = share
 			}
 		}
+	} else {
+		LogInfo.Printf("Data file does not exist! %s", dataFile)
 	}
 }
