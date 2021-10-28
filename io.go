@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"minetally/api"
 	"os"
 )
 
@@ -82,30 +81,12 @@ func createConfig(configFileDir string, configFileName string) Config {
 	return newConfig
 }
 
-func saveData() {
-	workerData := WorkerData{
-		Workers: []api.Worker{},
-		Shares:  make(map[int]map[int]int),
-	}
-
-	for worker, shares := range Workers {
-		workerData.Workers = append(workerData.Workers, worker)
-
-		for date, share := range shares {
-			if workerData.Shares[worker.UID] == nil {
-				workerData.Shares[worker.UID] = make(map[int]int)
-			}
-
-			workerData.Shares[worker.UID][date] = share
-		}
-	}
-
-	workerJsonData, err := json.Marshal(workerData)
+func saveData(data WorkerData, configDir string) {
+	workerJsonData, err := json.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
 
-	configDir := getConfigDir()
 	dataFile := configDir + jsonDataFileName
 
 	writeStringToFile(workerJsonData, dataFile)
@@ -125,8 +106,7 @@ func writeStringToFile(data []byte, filePath string) {
 	}
 }
 
-func readData() {
-	configDir := getConfigDir()
+func readData(configDir string) (WorkerData, error) {
 	dataFile := configDir + jsonDataFileName
 
 	_, err := os.Stat(dataFile)
@@ -139,7 +119,7 @@ func readData() {
 			LogError.Fatal(err)
 		}
 
-		var workerData WorkerData
+		workerData := WorkerData{}
 
 		// Unmarshall it
 		err = json.Unmarshal(data, &workerData)
@@ -147,24 +127,9 @@ func readData() {
 			LogError.Fatal(err)
 		}
 
-		// Fill our in-memory data structure with it
-		for _, worker := range workerData.Workers {
-			Workers[worker] = make(map[int]int)
-		}
-
-		// Fill the shares for each worker from the stored data
-		for workerUid, shares := range workerData.Shares {
-			worker, err := findWorkerForUid(workerUid)
-			if err != nil {
-				panic(err)
-			}
-
-			Workers[worker] = make(map[int]int)
-			for date, share := range shares {
-				Workers[worker][date] = share
-			}
-		}
+		return workerData, err
 	} else {
 		LogInfo.Printf("Data file does not exist! %s", dataFile)
+		return WorkerData{}, err
 	}
 }

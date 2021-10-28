@@ -25,15 +25,43 @@ import (
 */
 
 var WalletAddress string // This will be the address everyone's mining for
-var Workers = make(map[api.Worker]map[int]int)
 var Users []User
 
 type WorkerData struct {
-	Workers []api.Worker        `json:"workers"`
-	Shares  map[int]map[int]int `json:"shares"`
+	Workers []api.WorkerIdentity `json:"workers"`
+	Shares  map[int]map[int]int  `json:"shares"`
 }
 
-// Workers is in the format of
+var Data WorkerData
+
+func hasWorker(data WorkerData, workerUid int) bool {
+	_, err := getWorker(data, workerUid)
+	return err == nil
+}
+
+func getWorker(data WorkerData, workerUid int) (api.WorkerIdentity, error) {
+	var foundWorker api.WorkerIdentity
+	var found = false
+
+	for _, worker := range data.Workers {
+		if worker.UID == workerUid {
+			foundWorker = api.WorkerIdentity{
+				UID: worker.UID,
+				ID:  worker.ID,
+			}
+			found = true
+			break
+		}
+	}
+
+	if found {
+		return foundWorker, nil
+	} else {
+		return api.WorkerIdentity{}, errors.New("worker not found")
+	}
+}
+
+// WorkerShares is in the format of
 //[Worker1]
 //	[date] [numshare]
 //	[date] [numshare]
@@ -76,28 +104,38 @@ func main() {
 	var err error
 	ConfigureLogging(true, os.Stdout)
 
-	// config file should be stored at:
+	var report bool
+	var configDir string
+
+	defaultConfigDir := getConfigDir()
+
+	flag.BoolVar(&report, "report", false, "Generate a report from the collected data")
+	flag.StringVar(&configDir, "path", defaultConfigDir, "Directory to find config and data")
+	flag.Parse()
+
+	// Add a trailing path separator if the dumb ass user missed one
+	pathSeparator := string(os.PathSeparator)
+	if string(configDir[len(configDir)-1]) != pathSeparator {
+		configDir += pathSeparator
+	}
+
+	// default config file should be stored at:
 	// ~/.minetally/tally.json
-	configFileDir := getConfigDir()
-	configFilePath := configFileDir + configFileName
+
+	configFilePath := configDir + configFileName
 
 	tallyConfig, err := RenderConfig(configFilePath)
 	if err != nil {
 		LogError.Printf(err.Error())
 		LogError.Println("No config file. Writing default")
 
-		tallyConfig = createConfig(configFileDir, configFileName)
+		tallyConfig = createConfig(configDir, configFileName)
 	}
 	WalletAddress = tallyConfig.WalletAddress
 	Users = tallyConfig.Users
 
 	// Read the existing data file into memory
-	readData()
-
-	var report bool
-
-	flag.BoolVar(&report, "report", false, "Generate a report from the collected data")
-	flag.Parse()
+	Data, _ = readData(configDir)
 
 	// Generate a report and exit
 	if report {
@@ -117,7 +155,7 @@ func main() {
 		pollForWorkers()
 		pollForShares()
 
-		saveData()
+		saveData(Data, configDir)
 
 		//debug_printShares()
 		LogInfo.Printf("Sleep for: %d", PollInterval)
@@ -135,8 +173,13 @@ func pollForWorkers() {
 		LogInfo.Printf("Found %d workers\n", numWorkers)
 
 		for _, worker := range response.Data {
-			if Workers[worker] == nil {
-				Workers[worker] = make(map[int]int)
+			if !hasWorker(Data, worker.UID) {
+				workerId := api.WorkerIdentity{
+					UID: worker.UID,
+					ID:  worker.ID,
+				}
+				Data.Workers = append(Data.Workers, workerId)
+				Data.Shares[worker.UID] = make(map[int]int)
 				LogInfo.Printf("Found new worker! %s\n", worker.ID)
 			}
 		}
@@ -144,22 +187,23 @@ func pollForWorkers() {
 }
 
 func pollForShares() {
-	for worker, shares := range Workers {
+	for _, worker := range Data.Workers {
 		response, e := api.FetchWorkerShares(WalletAddress, worker)
 		if e != nil {
 			LogError.Printf("Failed to poll shares for worker %s", worker.ID)
 		} else {
+			shares := Data.Shares[worker.UID]
 			// Record unique shares
 			for _, workerShares := range response.Data {
 				shares[workerShares.Date] = workerShares.HashRate
 			}
 
-			LogInfo.Printf("Updated shares for workers.\n")
+			LogInfo.Printf("Updated shares for worker %s\n", worker.ID)
 		}
 	}
 }
 
-func userForWorker(worker api.Worker) (User, error) {
+func userForWorker(worker api.WorkerIdentity) (User, error) {
 	var foundUser User
 	var found bool
 
@@ -178,16 +222,6 @@ func userForWorker(worker api.Worker) (User, error) {
 	}
 	return foundUser, fmt.Errorf("user not found for worker '%s'", worker.ID)
 
-}
-
-func findWorkerForUid(uid int) (api.Worker, error) {
-	for worker := range Workers {
-		if worker.UID == uid {
-			return worker, nil
-		}
-	}
-
-	return api.Worker{}, errors.New(fmt.Sprintf("Failed to find worker for %d", uid))
 }
 
 type MiningTraunch struct {
@@ -233,7 +267,7 @@ func printPayoutInfo() {
 		knownUserReport()
 		unknownWorkerReport()
 
-		numWorkers := len(Workers)
+		numWorkers := len(Data.Workers)
 		LogInfo.Printf("numWorkers: %d", numWorkers)
 
 		debug_printShares()
@@ -252,32 +286,32 @@ func knownUserReport() {
 
 func unknownWorkerReport() {
 	reportSubheader("Unknown Known Workers")
-	var unkownWorkers []api.Worker
-	for worker := range Workers {
-		if !isKnownWorker(worker) && !workerInList(worker.ID, unkownWorkers) {
-			unkownWorkers = append(unkownWorkers, worker)
+	var unknownWorkers []api.WorkerIdentity
+	for _, worker := range Data.Workers {
+		if !isKnownWorker(worker) && !workerInList(worker.ID, unknownWorkers) {
+			unknownWorkers = append(unknownWorkers, worker)
 		}
 	}
 
-	if len(unkownWorkers) > 0 {
-		for _, unkownWorker := range unkownWorkers {
-			LogInfo.Printf(unkownWorker.ID)
+	if len(unknownWorkers) > 0 {
+		for _, unknownWorker := range unknownWorkers {
+			LogInfo.Printf(unknownWorker.ID)
 		}
 	} else {
 		LogInfo.Printf("none")
 	}
 }
 
-func workerInList(a string, list []api.Worker) bool {
+func workerInList(workerId string, list []api.WorkerIdentity) bool {
 	for _, b := range list {
-		if b.ID == a {
+		if b.ID == workerId {
 			return true
 		}
 	}
 	return false
 }
 
-func isKnownWorker(worker api.Worker) bool {
+func isKnownWorker(worker api.WorkerIdentity) bool {
 	var isKnown = false
 	for _, user := range Users {
 		for _, knownWorkerId := range user.WorkerNames {
@@ -310,8 +344,9 @@ func debug_printShares() {
 	sharesByUser := make(map[string]int)
 	var totalShares int
 
-	for worker, shares := range Workers {
+	for _, worker := range Data.Workers {
 		LogInfo.Printf("Worker: %s\n", worker.ID)
+		shares := Data.Shares[worker.UID]
 
 		owner, err := userForWorker(worker)
 		if err != nil {

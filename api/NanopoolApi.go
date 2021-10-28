@@ -24,7 +24,7 @@ func FetchWorkers(walletAddress string) (WorkerResponse, error) {
 	return *encoded, err
 }
 
-func FetchWorkerShares(walletAddress string, worker Worker) (SharesResponse, error) {
+func FetchWorkerShares(walletAddress string, worker WorkerIdentity) (SharesResponse, error) {
 	var encoded = new(SharesResponse)
 	res, err := http.Get(fmt.Sprintf("https://api.nanopool.org/v1/eth/shareratehistory/%s/%s", walletAddress, worker.ID))
 	if err != nil {

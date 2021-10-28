@@ -30,6 +30,11 @@ type Worker struct {
 	Rating    int    `json:"rating"`
 }
 
+type WorkerIdentity struct {
+	UID int    `json:"uid"`
+	ID  string `json:"id"`
+}
+
 type WorkerResponse struct {
 	Status bool     `json:"status"`
 	Data   []Worker `json:"data"`
