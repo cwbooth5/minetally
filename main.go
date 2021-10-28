@@ -259,7 +259,6 @@ func printPayoutInfo() {
 	} else if p.Status == false {
 		LogError.Printf("Payout request Status: false")
 	} else {
-
 		reportHeader("REPORT")
 
 		reportSubheader("Payments")
@@ -301,9 +300,13 @@ func knownUserReport() {
 				workerShares := sharedPerWorker(worker)
 				totalUserShares += workerShares
 				LogInfo.Printf("		  shares: %d", workerShares)
+			} else {
+				LogInfo.Printf("		  shares: none")
 			}
 		}
-		LogInfo.Printf("		 total shares: %d", totalUserShares)
+		LogInfo.Printf("		----------------")
+		LogInfo.Printf("		total shares: %d", totalUserShares)
+		LogInfo.Printf("")
 	}
 }
 
