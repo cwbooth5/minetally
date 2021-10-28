@@ -219,9 +219,28 @@ func userForWorker(worker api.WorkerIdentity) (User, error) {
 
 	if found {
 		return foundUser, nil
+	} else {
+		return foundUser, fmt.Errorf("user not found for worker '%s'", worker.ID)
 	}
-	return foundUser, fmt.Errorf("user not found for worker '%s'", worker.ID)
+}
 
+func workerIdentityForName(workerName string) (api.WorkerIdentity, error) {
+	var foundWorker api.WorkerIdentity
+	var found bool
+
+	for _, worker := range Data.Workers {
+		if workerName == worker.ID {
+			foundWorker = worker
+			found = true
+			break
+		}
+	}
+
+	if found {
+		return foundWorker, nil
+	} else {
+		return foundWorker, fmt.Errorf("worker not found for name '%s'", workerName)
+	}
 }
 
 type MiningTraunch struct {
@@ -266,11 +285,6 @@ func printPayoutInfo() {
 
 		knownUserReport()
 		unknownWorkerReport()
-
-		numWorkers := len(Data.Workers)
-		LogInfo.Printf("numWorkers: %d", numWorkers)
-
-		debug_printShares()
 	}
 }
 
@@ -278,14 +292,23 @@ func knownUserReport() {
 	reportSubheader("Known Users")
 	for _, user := range Users {
 		LogInfo.Printf("User: %s", user.Name)
-		for _, worker := range user.WorkerNames {
-			LogInfo.Printf("		Worker: %s", worker)
+		var totalUserShares = 0
+		for _, workerName := range user.WorkerNames {
+			LogInfo.Printf("		Worker: %s", workerName)
+
+			worker, err := workerIdentityForName(workerName)
+			if err == nil {
+				workerShares := sharedPerWorker(worker)
+				totalUserShares += workerShares
+				LogInfo.Printf("		  shares: %d", workerShares)
+			}
 		}
+		LogInfo.Printf("		 total shares: %d", totalUserShares)
 	}
 }
 
 func unknownWorkerReport() {
-	reportSubheader("Unknown Known Workers")
+	reportSubheader("Unknown Workers")
 	var unknownWorkers []api.WorkerIdentity
 	for _, worker := range Data.Workers {
 		if !isKnownWorker(worker) && !workerInList(worker.ID, unknownWorkers) {
@@ -298,8 +321,20 @@ func unknownWorkerReport() {
 			LogInfo.Printf(unknownWorker.ID)
 		}
 	} else {
-		LogInfo.Printf("none")
+		LogInfo.Printf("-- NONE --")
 	}
+	LogInfo.Printf("\n")
+}
+
+func sharedPerWorker(worker api.WorkerIdentity) int {
+	var totalShares = 0
+
+	shares := Data.Shares[worker.UID]
+	for _, share := range shares {
+		totalShares += share
+	}
+
+	return totalShares
 }
 
 func workerInList(workerId string, list []api.WorkerIdentity) bool {
@@ -329,18 +364,20 @@ func isKnownWorker(worker api.WorkerIdentity) bool {
 }
 
 func reportHeader(title string) {
+	LogInfo.Printf("\n")
 	LogInfo.Printf("========================================")
 	LogInfo.Printf("| %s", title)
 	LogInfo.Printf("========================================")
 }
 
 func reportSubheader(title string) {
+	LogInfo.Printf("")
 	LogInfo.Printf("==========")
 	LogInfo.Printf("%s", title)
 	LogInfo.Printf("==========")
 }
 
-func debug_printShares() {
+func debugPrintShares() {
 	sharesByUser := make(map[string]int)
 	var totalShares int
 
