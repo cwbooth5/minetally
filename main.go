@@ -104,14 +104,18 @@ func main() {
 	var err error
 	ConfigureLogging(true, os.Stdout)
 
-	var report bool
+	var paymentsReport bool
+	var usersReport bool
 	var configDir string
 
 	defaultConfigDir := getConfigDir()
 
-	flag.BoolVar(&report, "report", false, "Generate a report from the collected data")
+	flag.BoolVar(&paymentsReport, "payments", false, "Generate payment report")
+	flag.BoolVar(&usersReport, "users", false, "Generate user report")
 	flag.StringVar(&configDir, "path", defaultConfigDir, "Directory to find config and data")
 	flag.Parse()
+
+	anyReports := usersReport || paymentsReport
 
 	// Add a trailing path separator if the dumb ass user missed one
 	pathSeparator := string(os.PathSeparator)
@@ -138,8 +142,15 @@ func main() {
 	Data, _ = readData(configDir)
 
 	// Generate a report and exit
-	if report {
-		printPayoutInfo()
+	if anyReports {
+		reportHeader("REPORT")
+		if usersReport {
+			knownUserReport()
+			unknownWorkerReport()
+		}
+		if paymentsReport {
+			printPayoutInfo()
+		}
 		return
 	}
 
@@ -243,9 +254,58 @@ func workerIdentityForName(workerName string) (api.WorkerIdentity, error) {
 	}
 }
 
+func workerIdentityForUid(uid int) (api.WorkerIdentity, error) {
+	var foundWorker api.WorkerIdentity
+	var found bool
+
+	for _, worker := range Data.Workers {
+		if uid == worker.UID {
+			foundWorker = worker
+			found = true
+			break
+		}
+	}
+
+	if found {
+		return foundWorker, nil
+	} else {
+		return foundWorker, fmt.Errorf("worker not found for uid '%d'", uid)
+	}
+}
+
+func userForWorkerId(workerUid int) (User, error) {
+	var foundUser User
+	var found bool
+
+	workerIdentity, err := workerIdentityForUid(workerUid)
+
+	if err != nil {
+		return foundUser, fmt.Errorf("user not found for worker UID '%d'", workerUid)
+	}
+
+	for _, user := range Users {
+		for _, usersWorker := range user.WorkerNames {
+			if usersWorker == workerIdentity.ID {
+				foundUser = user
+				found = true
+				break
+			}
+		}
+	}
+
+	if found {
+		return foundUser, nil
+	} else {
+		return foundUser, fmt.Errorf("user not found for worker '%c'", workerUid)
+	}
+}
+
 type MiningTraunch struct {
-	StartTime int64 `json:"start"`
-	EndTime   int64 `json:"end"`
+	StartTime    int64         `json:"start"`
+	EndTime      int64         `json:"end"`
+	Amount       float64       `json:"amount"`
+	WorkerShares map[int]int64 `json:"worker_shares"`
+	TotalShares  int64         `json:"total_shares"`
 }
 
 func printPayoutInfo() {
@@ -254,36 +314,105 @@ func printPayoutInfo() {
 
 	p, e := api.FetchPayments(WalletAddress)
 	if e != nil {
-		fmt.Printf("Failed to make Payout request: %s", e.Error())
-		//LogError.Printf("Failed to make Payout request: %s", e.Error())
+		LogError.Printf("Failed to make Payout request: %s", e.Error())
 	} else if p.Status == false {
 		LogError.Printf("Payout request Status: false")
 	} else {
-		reportHeader("REPORT")
-
-		reportSubheader("Payments")
 		// Create the payment traunch date ranges
 		for _, payment := range p.Data {
 
-			newTranch := MiningTraunch{
-				StartTime: lastTime,
-				EndTime:   payment.Date,
+			newTruanch := MiningTraunch{
+				StartTime:    lastTime,
+				EndTime:      payment.Date,
+				Amount:       payment.Amount,
+				WorkerShares: map[int]int64{},
 			}
-			traunchs = append(traunchs, newTranch)
+			traunchs = append(traunchs, newTruanch)
 
 			lastTime = payment.Date
 
-			LogInfo.Printf("Payment found:")
+			/*
+				LogInfo.Printf("Payment found:")
 
-			t := time.Unix(payment.Date, 0)
-			LogInfo.Printf("Date: %s", t.String())
-			LogInfo.Printf("Amount: %f", payment.Amount)
+				t := time.Unix(payment.Date, 0)
+				LogInfo.Printf("Date: %s", t.String())
+				LogInfo.Printf("Amount: %f", payment.Amount)
 
-			LogInfo.Printf("\n")
+				LogInfo.Printf("\n")
+			*/
 		}
 
-		knownUserReport()
-		unknownWorkerReport()
+		sharesReport(traunchs)
+	}
+}
+
+func sharesReport(traunchs []MiningTraunch) {
+	reportHeader("User's Ethereum per Payment")
+
+	// Find all the shares per worker per traunch
+	for _, traunch := range traunchs {
+		startDate := time.Unix(traunch.StartTime, 0)
+		endDate := time.Unix(traunch.EndTime, 0)
+
+		for workerUid := range Data.Shares {
+			shares := Data.Shares[workerUid]
+
+			var totalShares int64 = 0
+			for timestamp := range shares {
+				shareDate := time.Unix(int64(timestamp), 0)
+
+				if (shareDate.After(startDate) && shareDate.Before(endDate)) || shareDate == endDate {
+					amountOfShares := shares[timestamp]
+					totalShares += int64(amountOfShares)
+				}
+			}
+			traunch.WorkerShares[workerUid] = totalShares
+		}
+	}
+
+	// Now report Per traunch per user
+	for _, traunch := range traunchs {
+		userShares := map[string]int64{}
+		for _, user := range Users {
+			userShares[user.Name] = 0
+		}
+
+		for workerId := range traunch.WorkerShares {
+			workerShares := traunch.WorkerShares[workerId]
+			traunch.TotalShares += workerShares
+
+			user, err := userForWorkerId(workerId)
+			if err == nil {
+				userShares[user.Name] += workerShares
+			} else {
+				//LogError.Printf("Failed to find user for worker UID: %d", workerId)
+			}
+		}
+
+		endTime := time.Unix(traunch.EndTime, 0)
+		header := fmt.Sprintf("Payout: %s", endTime.String())
+		reportSubheader(header)
+		LogInfo.Printf("Ethereum: %f", traunch.Amount)
+		var anyoneHasShares = false
+		// Print the results from this traunch
+		for userName := range userShares {
+			shares := userShares[userName]
+			if traunch.TotalShares > 0 {
+				percentOfShares := shares / traunch.TotalShares
+				ethMined := traunch.Amount * float64(percentOfShares)
+				LogInfo.Printf("    User: %s", userName)
+				LogInfo.Printf("      Shares: %d", shares)
+				LogInfo.Printf("      Eth: %d", ethMined)
+				anyoneHasShares = true
+			} else {
+				LogInfo.Printf("    No shares recorded for user: %s", userName)
+			}
+		}
+
+		if !anyoneHasShares {
+			equalProportion := traunch.Amount / float64(len(Users))
+			LogInfo.Printf("    No recorded shares for anyone. Equal proportion would be: %f Eth", equalProportion)
+		}
 	}
 }
 
